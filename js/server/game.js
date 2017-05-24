@@ -24,6 +24,8 @@ DEALINGS IN THE SOFTWARE.
 
 */
 
+const tiles = require(__dirname + '/tiles.js');
+
 module.exports = {
 	game : function() {
 		this.matches = [];
@@ -69,7 +71,16 @@ module.exports = {
 
 		this.add_match = function (my_match) {
 			this.matches.push(my_match);
-		}
+		};
+
+		this.remove_match = function (my_match) {
+			for (var i = 0; i < this.matches.length; i++) {
+				if(this.matches[i] == my_match) {
+					this.matches.splice(i);
+					return;
+				}
+			}
+		};
 
 		this.get_player_id = function() {
 			var used_ids = [];
@@ -95,9 +106,37 @@ module.exports = {
 		this.players = [];
 		this.map = [];
 		this.timer = 0;
+		this.interval = null;
+		this.meta = [];
 
 		this.join = function(my_player) {
+			my_player.match = this;
 			this.players.push(my_player);
+		};
+
+		this.leave = function(my_player) {
+			var index = 0;
+			for (var i = 0; i < this.players.length; i++) {
+				var p = this.players[i];
+
+				if (p.id == my_player.id) {
+					index = i;
+					break;
+				}
+			}
+
+			this.players.splice(index, 1);
+			my_player.match = null;
+
+			if(this.players.length < 1) {
+				console.log("[info][match] no players");
+
+				if(this.interval) {
+					clearInterval(this.interval);
+				}
+
+				this.game.remove_match(this);
+			}
 		};
 
 		this.generate_map = function() {
@@ -107,7 +146,11 @@ module.exports = {
 				for (var j = 0; j < 16; j++) {
 					var row = [];
 					for (var k = 0; k < 16; k++) {
-						row.push(Math.floor(Math.random() * 3));
+						if(i == 0) {
+							row.push(Math.floor(Math.random() * 3));
+						} else {
+							row.push(-1)
+						}
 					}
 					layer.push(row);
 				}
@@ -122,12 +165,6 @@ module.exports = {
 				for (var i = 0; i < this.players.length; i++) {
 					var x = Math.floor(Math.random()*16);
 					var y = Math.floor(Math.random()*16);
-					this.players[i].socket.emit("set_tile", {
-						x : x,
-						y : y,
-						layer : 0,
-						tile: this.map[0][x][y]
-					})
 				}
 
 				this.timer = 0;
@@ -136,20 +173,101 @@ module.exports = {
 
 		this.start = function() {
 			this.generate_map();
+			this.meta = [];
 
 			for (var i = 0; i < this.players.length; i++) {
+				var x = Math.floor(Math.random()*16);
+				var y = Math.floor(Math.random()*16);
+
+				this.players[i].spawn_pos = {
+					x : x,
+					y : y
+				};
+
+				this.map[1][x][y] = tiles.city;
+				this.set_meta(x, y, {
+					player: i,
+					level : 1
+				});
+
 				this.players[i].socket.emit("start_match", {});
+
+				this.explore(this.players[i], x, y);
 			}
 
-			setInterval(() => {
+			this.interval = setInterval(() => {
 				this.update();
 			}, 1000);
 		};
+
+		this.get_meta = function (x, y) {
+			return this.meta[y*this.map.length+x];
+		};
+
+		this.set_meta = function (x, y, data) {
+			this.meta[y*this.map.length+x] = data;
+		};
+
+		this.build = function (player, x, y, tile) {
+			if(!this.is_on_map(x,y)) {
+				console.log("[error][match] is not on map " + x + ", " + y);
+				return;
+			}
+
+			this.map[1][x][y] = tile;
+
+			for (var i = 0; i < this.players.length; i++) {
+				var p = this.players[i];
+				this.explore(p, x, y);
+			}
+		};
+
+		this.explore = function(player, x, y) {
+			for (var j = -1; j <= 1; j++) {
+				for (var k = -1; k <= 1; k++) {
+					if (x+j >= 0 && x+j < this.map[0].length && y+k >= 0 && y+k < this.map[0].length) {
+						this.send_tile(player, x+j, y+k);
+					}
+				}
+			}
+		};
+
+		this.is_on_map = function(x, y) {
+			return x >= 0 && x < this.map[0].length && y >= 0 && y < this.map[0].length;
+		};
+
+		this.send_tile = function (player, x, y) {
+			player.socket.emit("set_tile", {
+				x : x,
+				y : y,
+				layer : 0,
+				tile: this.map[0][x][y]
+			});
+
+			player.socket.emit("set_tile", {
+				x : x,
+				y : y,
+				layer : 1,
+				tile: this.map[1][x][y]
+			});
+
+			player.socket.emit("set_tile", {
+				x : x,
+				y : y,
+				layer : 2,
+				tile: this.map[2][x][y]
+			});
+		}
 	},
 
 	player : function (name, socket, id) {
 		this.name = name;
 		this.socket = socket;
 		this.id = id;
+		this.match = null;
+		this.spawn_pos = {
+			x : -1,
+			y : -1
+		};
 	}
 };

@@ -37,13 +37,19 @@ var files = {
 	},
 
 	js : {
-		core : fs.readFileSync("./js/client/core.js")
+		core : fs.readFileSync("./js/client/core.js"),
+		font : fs.readFileSync("./js/client/font.js")
 	},
 
 	img : {
 		grass : fs.readFileSync("./img/grass.png"),
 		snow : fs.readFileSync("./img/snow.png"),
-		water : fs.readFileSync("./img/water.png")
+		water : fs.readFileSync("./img/water.png"),
+
+		city : fs.readFileSync("./img/city.png"),
+
+		selection : fs.readFileSync("./img/selection.png"),
+		font : fs.readFileSync("./img/font.png")
 	}
 };
 
@@ -54,6 +60,9 @@ var my_server = http.createServer(function (req, res) {
 	} else if(req.url == "/js/core.js") {
 		res.writeHead(200);
 		res.end(files.js.core);
+	} else if(req.url == "/js/font.js") {
+		res.writeHead(200);
+		res.end(files.js.font);
 	} else if(req.url == "/css/style.css") {
 		res.writeHead(200);
 		res.end(files.css.style);
@@ -69,6 +78,15 @@ var my_server = http.createServer(function (req, res) {
 	} else if(req.url == "/img/snow.png") {
 		res.writeHead(200, {"Content-Type" : "image/png"});
 		res.end(files.img.snow);
+	} else if(req.url == "/img/city.png") {
+		res.writeHead(200, {"Content-Type" : "image/png"});
+		res.end(files.img.city);
+	} else if(req.url == "/img/selection.png") {
+		res.writeHead(200, {"Content-Type" : "image/png"});
+		res.end(files.img.selection);
+	} else if(req.url == "/img/font.png") {
+		res.writeHead(200, {"Content-Type" : "image/png"});
+		res.end(files.img.font);
 	} else {
 		res.writeHead(200);
 		res.end("<html><body>Error: 404 <br><a href=\"/\">Back</a></body></html>");
@@ -84,6 +102,11 @@ io.on("connection", function(socket) {
 	my_game.join(my_player);
 
 	socket.on("disconnect", function () {
+		if(my_player.match) {
+			my_player.match.leave(my_player);
+			console.log("[info][match] player " + my_player.name + " left");
+		}
+
 		my_game.leave(my_player);
 		console.log("disconnect");
 	});
@@ -109,6 +132,15 @@ io.on("connection", function(socket) {
 			return;
 		}
 
+		if (data.action == 2) {
+			if(my_game.matches.length > 0) {
+				data.action = 1;
+				data.match = 0;
+			} else {
+				data.action = 0;
+			}
+		}
+
 		if(data.action == 0) {
 			// new match
 			console.log("[info] new match");
@@ -124,12 +156,33 @@ io.on("connection", function(socket) {
 
 			// join match
 			console.log("[info] join");
-			var my_match = my_game.get_match(data.match);
+			var my_match = my_game.matches[data.match];
 			my_match.join(my_player);
 
 			my_player.socket.emit("start_match", {});
 		}
-	})
+	});
+
+	socket.on("build", function (data) {
+		if(typeof data.x != "number") {
+			console.log("[error][match] wrong type (0)");
+			return;
+		}
+
+		if(typeof data.y != "number") {
+			console.log("[error][match] wrong type (1)");
+			return;
+		}
+
+		if(typeof data.tile != "number") {
+			console.log("[error][match] wrong type (2)");
+			return;
+		}
+
+		if(my_player.match) {
+			my_player.match.build(my_player, data.x, data.y, data.tile);
+		}
+	});
 })
 
 my_server.listen(8080);

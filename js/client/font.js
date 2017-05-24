@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<!--
+/*
 
 # License for Code
 
@@ -23,19 +22,31 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
--->
+*/
 
-<html>
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<link rel="stylesheet" type="text/css" href="/css/style.css" media="screen">
-		<title></title>
-	</head>
-	<body onload="load();">
-		<canvas id="canvas"></canvas>
-		<script src="/socket.io/socket.io.js"></script>
-		<script src="/js/font.js"></script>
-		<script src="/js/core.js"></script>
-	</body>
-</html>
+var LEFT = 0;
+var RIGHT = 1;
+
+function font(src, layout, w, h) {
+	this.img = new Image();
+	this.img.src = src;
+	this.layout = layout;
+	this.w = w;
+	this.h = h;
+
+	this.text_align = 0;
+
+	this.draw_text = function (text, pos_x, pos_y) {
+		for(var i = 0; i < text.length; i++) {
+			var char = text.charAt(i);
+			var index = this.layout.indexOf(char);
+			var x = index * this.w;
+
+			if(this.text_align == LEFT) {
+				ctx.drawImage(this.img, x, 0, this.w, this.h, pos_x + (i*(this.w + 1)), pos_y, this.w, this.h);
+			} else {
+				ctx.drawImage(this.img, x, 0, this.w, this.h, pos_x - (i*(this.w + 1))-this.w, pos_y, this.w, this.h);
+			}
+		}
+	};
+}
