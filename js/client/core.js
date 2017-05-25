@@ -30,6 +30,8 @@ var last_time = 0;
 var game_state = 0;
 var socket = io();
 
+var mouse_pressed = [0, 0, 0, 0];
+
 // map
 var map = [];
 
@@ -62,11 +64,24 @@ register_tile(1, "img/city.png");
 // selection
 var selection = {
 	x : 0,
-	y : 0
+	y : 0,
+
+	start : {
+		x : 0,
+		y : 0
+	}
 };
 
 var selection_img = new Image();
 selection_img.src = "img/selection.png";
+
+// viewport
+var viewport = {
+	x : 0,
+	y : 0
+};
+
+selected_tile = 1;
 
 // font
 var font_1 = new font("img/font.png", ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], 5, 7);
@@ -90,7 +105,9 @@ function update(t) {
 	var dtime = t - last_time;
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
 	ctx.globalAlpha = 1;
+
 	if(game_state == 2) {
+		ctx.translate(Math.floor(viewport.x), Math.floor(viewport.y));
 		for (var i = 0; i < map.length; i++) {
 			var layer = map[i];
 			for (var j = 0; j < layer.length; j++) {
@@ -116,6 +133,16 @@ function update(t) {
 
 		ctx.globalAlpha = 0.7;
 		ctx.drawImage(selection_img, selection.x*w, selection.y*h);
+
+		if(selection.x >= 0 && selection.x < map[0].length && selection.y >= 0 && selection.y < map[0].length) {
+			if (selected_tile == 2) {
+				draw_path(selection.x, selection.y);
+			} else {
+				ctx.drawImage(tiles[1][selected_tile], selection.x*w, selection.y*h-4);
+			}
+		}
+
+		ctx.translate(-Math.floor(viewport.x), -Math.floor(viewport.y));
 
 		ctx.globalAlpha = 1;
 		font_1.text_align = RIGHT;
@@ -189,26 +216,30 @@ socket.on("start_match", function(data) {
 		map.push(layer);
 	}
 
-	resources = {
-		gold : 0,
-		research : 0
-	};
+	if (typeof data.gold == "number" && typeof data.research == "number") {
+		resources = {
+			gold : data.gold,
+			research : data.research
+		};
+	} else {
+		resources = {
+			gold : 0,
+			research : 0
+		};
+	}
 });
 
-socket.on("resource", function (data) {
-	if (typeof data.resource != "string") {
+socket.on("resources", function (data) {
+	if (typeof data.gold != "number") {
 		return;
 	}
 
-	if (typeof data.amount != "number") {
+	if (typeof data.research != "number") {
 		return;
 	}
 
-	if(data.resource == "gold") {
-		resources.gold = data.amount;
-	} else if (data.resource == "research") {
-		resources.research = data.amount;
-	}
+	resources.gold = data.gold;
+	resources.research = data.research;
 })
 
 function set_game_state(s) {
@@ -216,27 +247,64 @@ function set_game_state(s) {
 }
 
 document.onmousedown = function(event) {
+	mouse_pressed[event.which] = true;
+
 	var x = event.pageX / (window.innerWidth/canvas.width);
 	var y = event.pageY / ((window.innerWidth * (9 / 16))/canvas.height);
 
-	selection.x = Math.floor(x/w);
-	selection.y = Math.floor(y/h);
+	var x_1 = x - viewport.x;
+	var y_1 = y - viewport.y;
 
-	socket.emit("build", {
-		x : selection.x,
-		y : selection.y,
-		tile : 2
-	})
+	if(event.which == 1) {
+		selection.x = Math.floor(x_1/w);
+		selection.y = Math.floor(y_1/h);
+
+		socket.emit("build", {
+			x : selection.x,
+			y : selection.y,
+			tile : selected_tile
+		})
+	}
 };
 
 document.onmousemove = function(event) {
 	var x = event.pageX / (window.innerWidth/canvas.width);
 	var y = event.pageY / ((window.innerWidth * (9 / 16))/canvas.height);
 
-	selection.x = Math.floor(x/w);
-	selection.y = Math.floor(y/h);
+	var x_1 = x - viewport.x;
+	var y_1 = y - viewport.y;
+
+	selection.x = Math.floor(x_1/w);
+	selection.y = Math.floor(y_1/h);
+
+	if(mouse_pressed[2]) {
+		viewport.x += x - selection.start.x;
+		viewport.y += y - selection.start.y;
+	}
+
+	selection.start.x = x;
+	selection.start.y = y;
 };
 
 document.onmouseup = function(event) {
+	mouse_pressed[event.which] = false;
 
+	var x = event.pageX / (window.innerWidth/canvas.width);
+	var y = event.pageY / ((window.innerWidth * (9 / 16))/canvas.height);
+
+	selection.start.x = x;
+	selection.start.y = y;
 };
+
+document.oncontextmenu = function(event) {
+	event.preventDefault();
+
+	var x = event.pageX / (window.innerWidth/canvas.width);
+	var y = event.pageY / ((window.innerWidth * (9 / 16))/canvas.height);
+
+	selected_tile += 1;
+
+	if(selected_tile > 2) {
+		selected_tile = 1;
+	}
+}

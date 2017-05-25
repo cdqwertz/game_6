@@ -109,6 +109,8 @@ module.exports = {
 		this.interval = null;
 		this.meta = [];
 
+		this.explored_tiles = [];
+
 		this.join = function(my_player) {
 			my_player.match = this;
 			this.players.push(my_player);
@@ -162,9 +164,25 @@ module.exports = {
 			this.timer++;
 
 			if(this.timer >= 5) {
+				var layer = this.map[1];
+				for (var i = 0; i < layer.length; i++) {
+					for (var j = 0; j < layer[i].length; j++) {
+						var tile = layer[i][j]
+						var owner = this.get_owner(i, j);
+
+						if(tile == tiles.city) {
+							if(owner) {
+								owner.resources.gold += 2;
+								owner.resources.research += 1;
+							}
+						} else if (tile == tiles.path) {
+						}
+					}
+				}
+
 				for (var i = 0; i < this.players.length; i++) {
-					var x = Math.floor(Math.random()*16);
-					var y = Math.floor(Math.random()*16);
+					this.players[i].resources.gold += 1;
+					this.send_resources(this.players[i]);
 				}
 
 				this.timer = 0;
@@ -184,13 +202,24 @@ module.exports = {
 					y : y
 				};
 
+				this.players[i].resources = {
+					gold : 10,
+					research : 0
+				}
+
+				this.players[i].owned_tiles = [];
+				this.claim_area(this.players[i], x, y);
+
 				this.map[1][x][y] = tiles.city;
 				this.set_meta(x, y, {
 					player: i,
 					level : 1
 				});
 
-				this.players[i].socket.emit("start_match", {});
+				this.players[i].socket.emit("start_match", {
+					gold : this.players[i].resources.gold,
+					research : this.players[i].resources.research
+				});
 
 				this.explore(this.players[i], x, y);
 			}
@@ -201,11 +230,50 @@ module.exports = {
 		};
 
 		this.get_meta = function (x, y) {
-			return this.meta[y*this.map.length+x];
+			return this.meta[y*this.map[0].length+x];
 		};
 
 		this.set_meta = function (x, y, data) {
-			this.meta[y*this.map.length+x] = data;
+			this.meta[y*this.map[0].length+x] = data;
+		};
+
+		this.is_explored = function (x, y) {
+			return this.explored_tiles.indexOf(y*this.map[0].length+x) != -1;
+		};
+
+		this.claim_tile = function (player, x, y) {
+			player.owned_tiles.push(y*this.map[0].length+x);
+		};
+
+		this.claim_area = function (player, x, y) {
+			for (var j = -1; j <= 1; j++) {
+				for (var k = -1; k <= 1; k++) {
+					if (x+j >= 0 && x+j < this.map[0].length && y+k >= 0 && y+k < this.map[0].length) {
+						this.claim_tile(player, x+j, y+k);
+					}
+				}
+			}
+		};
+
+		this.get_owner = function (x, y) {
+			for (var i = 0; i < this.players.length; i++) {
+				var p = this.players[i];
+
+				if (p.owned_tiles.indexOf(y*this.map[0].length+x) != -1) {
+					return p;
+				}
+			}
+			return;
+		}
+
+		this.get_cost = function (tile) {
+			if (tile == tiles.city) {
+				return 10;
+			} else if (tile == tiles.path) {
+				return 2;
+			} else {
+				return 0;
+			}
 		};
 
 		this.build = function (player, x, y, tile) {
@@ -214,11 +282,28 @@ module.exports = {
 				return;
 			}
 
-			this.map[1][x][y] = tile;
+			if (this.map[1][x][y] != -1) {
+				return;
+			}
 
-			for (var i = 0; i < this.players.length; i++) {
-				var p = this.players[i];
-				this.explore(p, x, y);
+			if (this.is_explored(x, y)) {
+				var cost = this.get_cost(tile);
+
+				if (player.resources.gold >= cost) {
+					player.resources.gold -= cost;
+					this.map[1][x][y] = tile;
+
+					if (tile == tiles.city) {
+						this.claim_area(player, x, y);
+					}
+
+					for (var i = 0; i < this.players.length; i++) {
+						var p = this.players[i];
+						this.explore(p, x, y);
+					}
+
+					this.send_resources(player);
+				}
 			}
 		};
 
@@ -227,6 +312,8 @@ module.exports = {
 				for (var k = -1; k <= 1; k++) {
 					if (x+j >= 0 && x+j < this.map[0].length && y+k >= 0 && y+k < this.map[0].length) {
 						this.send_tile(player, x+j, y+k);
+
+						this.explored_tiles.push((y+k)*this.map[0].length+(x+j));
 					}
 				}
 			}
@@ -257,7 +344,14 @@ module.exports = {
 				layer : 2,
 				tile: this.map[2][x][y]
 			});
-		}
+		};
+
+		this.send_resources = function (player) {
+			player.socket.emit("resources", {
+				gold : player.resources.gold,
+				research : player.resources.research
+			});
+		};
 	},
 
 	player : function (name, socket, id) {
@@ -265,9 +359,17 @@ module.exports = {
 		this.socket = socket;
 		this.id = id;
 		this.match = null;
+
 		this.spawn_pos = {
 			x : -1,
 			y : -1
 		};
+
+		this.resources = {
+			gold : 10,
+			research : 0
+		};
+
+		this.owned_tiles = [];
 	}
 };

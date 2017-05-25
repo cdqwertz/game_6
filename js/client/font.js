@@ -45,8 +45,12 @@ function font(src, layout, w, h) {
 			if(this.text_align == LEFT) {
 				ctx.drawImage(this.img, x, 0, this.w, this.h, pos_x + (i*(this.w + 1)), pos_y, this.w, this.h);
 			} else {
-				ctx.drawImage(this.img, x, 0, this.w, this.h, pos_x - (i*(this.w + 1))-this.w, pos_y, this.w, this.h);
+				ctx.drawImage(this.img, x, 0, this.w, this.h, pos_x - this.get_text_width(text) + (i*(this.w + 1)), pos_y, this.w, this.h);
 			}
 		}
 	};
+
+	this.get_text_width = function (text) {
+		return (text.length*(this.w + 1));
+	}
 }
