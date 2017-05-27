@@ -32,15 +32,6 @@ var socket = io();
 
 var mouse_pressed = [0, 0, 0, 0];
 
-// map
-var map = [];
-
-// resources
-var resources = {
-	gold : 0,
-	research : 0
-};
-
 // tile w/h
 var w = 16;
 var h = 12;
@@ -53,6 +44,9 @@ function register_tile(layer, src) {
 	tiles[layer][tiles[layer].length-1].src = src;
 };
 
+var selection_img = new Image();
+selection_img.src = "img/selection.png";
+
 // register tiles (layer 0)
 register_tile(0, "img/water.png");
 register_tile(0, "img/grass.png");
@@ -61,30 +55,20 @@ register_tile(0, "img/snow.png");
 register_tile(1, "img/city.png");
 register_tile(1, "img/city.png");
 
-// selection
-var selection = {
-	x : 0,
-	y : 0,
-
-	start : {
-		x : 0,
-		y : 0
-	}
-};
-
-var selection_img = new Image();
-selection_img.src = "img/selection.png";
-
-// viewport
-var viewport = {
-	x : 0,
-	y : 0
-};
-
-selected_tile = 1;
+var available_matches = [];
 
 // font
-var font_1 = new font("img/font.png", ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], 5, 7);
+var font_1 = new font("img/font.png", ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ".",
+ 																			"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K",
+																			"L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",
+																			"W", "X", "Y", "Z"], 5, 7);
+
+var my_match = new match();
+
+var LOGIN = 0;
+var SELECT_MATCH = 1;
+var WAIT = 2;
+var PLAY = 3;
 
 function load() {
 	canvas = document.getElementById("canvas");
@@ -106,49 +90,26 @@ function update(t) {
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
 	ctx.globalAlpha = 1;
 
-	if(game_state == 2) {
-		ctx.translate(Math.floor(viewport.x), Math.floor(viewport.y));
-		for (var i = 0; i < map.length; i++) {
-			var layer = map[i];
-			for (var j = 0; j < layer.length; j++) {
-				var row = layer[j];
-				for (var k = 0; k < row.length; k++) {
-					var tile = row[k];
-					if(tile != -1) {
-						if(i == 0) {
-							ctx.drawImage(tiles[i][tile], j * w, k * h);
-						} else {
-							if (tile == 2) {
-								draw_path(j, k);
-							} else if(tiles[i][tile]) {
-								ctx.drawImage(tiles[i][tile], j * w, k * h-4);
-							} else {
-								console.log("Could not find tile " + tile);
-							}
-						}
-					}
-				}
-			}
+	if(game_state == PLAY) {
+		if(my_match) {
+			my_match.draw();
+		} else {
+			console.log("ERROR");
 		}
+	} else if (game_state == SELECT_MATCH) {
+		font_1.text_align = CENTER;
+		font_1.draw_text("SELECT MATCH", canvas.width/2, 5);
 
-		ctx.globalAlpha = 0.7;
-		ctx.drawImage(selection_img, selection.x*w, selection.y*h);
+	 	for (var i = 0; i < available_matches.length; i++) {
+			font_1.text_align = CENTER;
+	 		font_1.draw_text(available_matches[i], canvas.width/2, i * (font_1.h + 2) + 16);
+	 	}
+	} else if (game_state == LOGIN) {
 
-		if(selection.x >= 0 && selection.x < map[0].length && selection.y >= 0 && selection.y < map[0].length) {
-			if (selected_tile == 2) {
-				draw_path(selection.x, selection.y);
-			} else {
-				ctx.drawImage(tiles[1][selected_tile], selection.x*w, selection.y*h-4);
-			}
-		}
-
-		ctx.translate(-Math.floor(viewport.x), -Math.floor(viewport.y));
-
-		ctx.globalAlpha = 1;
-		font_1.text_align = RIGHT;
-		font_1.draw_text(resources.gold.toString(), canvas.width-2, 2);
-		font_1.draw_text(resources.research.toString(), canvas.width-2, 4+font_1.h);
+	} else if (game_state == WAIT) {
+		font_1.draw_text("WAITING FOR OTHER PLAYERS", canvas.width/2, 5);
 	}
+
 
 	last_time = t;
 	window.requestAnimationFrame(update);
@@ -164,8 +125,8 @@ function draw_path (x, y) {
 		beginPath();
 
 		for (var i = -1; i <= 1; i++) {
-			if(x+i >= 0 && x+i < map[0].length) {
-				if (map[1][x+i][y] != -1) {
+			if(x+i >= 0 && x+i < my_match.map[0].length) {
+				if (my_match.map[1][x+i][y] != -1) {
 					moveTo(center_x, center_y);
 					lineTo(center_x+(w/2)*i, center_y);
 				}
@@ -173,8 +134,8 @@ function draw_path (x, y) {
 		}
 
 		for (var j = -1; j <= 1; j++) {
-			if(y+j >= 0 && y+j < map[0].length) {
-				if (map[1][x][y+j] != -1) {
+			if(y+j >= 0 && y+j < my_match.map[0].length) {
+				if (my_match.map[1][x][y+j] != -1) {
 					moveTo(center_x, center_y);
 					lineTo(center_x, center_y+(h/2)*j);
 				}
@@ -184,63 +145,6 @@ function draw_path (x, y) {
 		stroke();
 	}
 }
-
-socket.on("ok", function (data) {
-	if(game_state == 0) {
-		if(data.id == 1) {
-			set_game_state(1);
-			console.log("new match");
-			socket.emit("match", {action : 2});
-		}
-	}
-});
-
-socket.on("set_tile", function (data) {
-	map[data.layer][data.x][data.y] = data.tile;
-});
-
-socket.on("start_match", function(data) {
-	console.log("start_match");
-	game_state = 2;
-
-	map = [];
-	for (var i = 0; i < 3; i++) {
-		var layer = [];
-		for (var j = 0; j < 16; j++) {
-			var row = [];
-			for (var k = 0; k < 16; k++) {
-				row.push(-1);
-			}
-			layer.push(row);
-		}
-		map.push(layer);
-	}
-
-	if (typeof data.gold == "number" && typeof data.research == "number") {
-		resources = {
-			gold : data.gold,
-			research : data.research
-		};
-	} else {
-		resources = {
-			gold : 0,
-			research : 0
-		};
-	}
-});
-
-socket.on("resources", function (data) {
-	if (typeof data.gold != "number") {
-		return;
-	}
-
-	if (typeof data.research != "number") {
-		return;
-	}
-
-	resources.gold = data.gold;
-	resources.research = data.research;
-})
 
 function set_game_state(s) {
 	game_state = s;
@@ -252,18 +156,23 @@ document.onmousedown = function(event) {
 	var x = event.pageX / (window.innerWidth/canvas.width);
 	var y = event.pageY / ((window.innerWidth * (9 / 16))/canvas.height);
 
-	var x_1 = x - viewport.x;
-	var y_1 = y - viewport.y;
+	if (game_state == PLAY) {
+		var x_1 = x - my_match.viewport.x;
+		var y_1 = y - my_match.viewport.y;
 
-	if(event.which == 1) {
-		selection.x = Math.floor(x_1/w);
-		selection.y = Math.floor(y_1/h);
+		if(event.which == 1) {
+			my_match.selection.x = Math.floor(x_1/w);
+			my_match.selection.y = Math.floor(y_1/h);
 
-		socket.emit("build", {
-			x : selection.x,
-			y : selection.y,
-			tile : selected_tile
-		})
+			socket.emit("build", {
+				x : my_match.selection.x,
+				y : my_match.selection.y,
+				tile : my_match.selected_tile
+			})
+		}
+	} else if (game_state == SELECT_MATCH) {
+		console.log("join/new match");
+		socket.emit("match", {action : 2});
 	}
 };
 
@@ -271,19 +180,21 @@ document.onmousemove = function(event) {
 	var x = event.pageX / (window.innerWidth/canvas.width);
 	var y = event.pageY / ((window.innerWidth * (9 / 16))/canvas.height);
 
-	var x_1 = x - viewport.x;
-	var y_1 = y - viewport.y;
+	if (game_state == PLAY) {
+		var x_1 = x - my_match.viewport.x;
+		var y_1 = y - my_match.viewport.y;
 
-	selection.x = Math.floor(x_1/w);
-	selection.y = Math.floor(y_1/h);
+		my_match.selection.x = Math.floor(x_1/w);
+		my_match.selection.y = Math.floor(y_1/h);
 
-	if(mouse_pressed[2]) {
-		viewport.x += x - selection.start.x;
-		viewport.y += y - selection.start.y;
+		if(mouse_pressed[2]) {
+			my_match.viewport.x += x - my_match.selection.start.x;
+			my_match.viewport.y += y - my_match.selection.start.y;
+		}
+
+		my_match.selection.start.x = x;
+		my_match.selection.start.y = y;
 	}
-
-	selection.start.x = x;
-	selection.start.y = y;
 };
 
 document.onmouseup = function(event) {
@@ -292,8 +203,10 @@ document.onmouseup = function(event) {
 	var x = event.pageX / (window.innerWidth/canvas.width);
 	var y = event.pageY / ((window.innerWidth * (9 / 16))/canvas.height);
 
-	selection.start.x = x;
-	selection.start.y = y;
+	if (game_state == PLAY) {
+		my_match.selection.start.x = x;
+		my_match.selection.start.y = y;
+	}
 };
 
 document.oncontextmenu = function(event) {
@@ -302,9 +215,11 @@ document.oncontextmenu = function(event) {
 	var x = event.pageX / (window.innerWidth/canvas.width);
 	var y = event.pageY / ((window.innerWidth * (9 / 16))/canvas.height);
 
-	selected_tile += 1;
+	if (game_state == PLAY) {
+		my_match.selected_tile += 1;
 
-	if(selected_tile > 2) {
-		selected_tile = 1;
+		if(my_match.selected_tile > 2) {
+			my_match.selected_tile = 1;
+		}
 	}
 }

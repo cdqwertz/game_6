@@ -76,7 +76,7 @@ module.exports = {
 		this.remove_match = function (my_match) {
 			for (var i = 0; i < this.matches.length; i++) {
 				if(this.matches[i] == my_match) {
-					this.matches.splice(i);
+					this.matches.splice(i, 1);
 					return;
 				}
 			}
@@ -93,11 +93,11 @@ module.exports = {
 				}
 
 				used_ids[p.id] = 1;
-
-				return used_ids.indexOf(0);
 			}
 
 			used_ids.push(0);
+
+			return used_ids.indexOf(0);
 		};
 	},
 
@@ -108,12 +108,22 @@ module.exports = {
 		this.timer = 0;
 		this.interval = null;
 		this.meta = [];
-
+		this.started = false;
 		this.explored_tiles = [];
 
 		this.join = function(my_player) {
 			my_player.match = this;
 			this.players.push(my_player);
+
+			if (this.players.length >= 2 && !(this.started)) {
+				this.start();
+			} else if(this.started) {
+				console.log("[error] match already started");
+			}
+		};
+
+		this.can_join = function() {
+			return !this.started;
 		};
 
 		this.leave = function(my_player) {
@@ -140,6 +150,16 @@ module.exports = {
 				this.game.remove_match(this);
 			}
 		};
+
+		this.get_desc = function() {
+			var desc = [];
+
+			for (var i = 0; i < this.players.length; i++) {
+				desc.push(this.players[i].name);
+			}
+
+			return desc.join(", ");
+		}
 
 		this.generate_map = function() {
 			this.map = [];
@@ -207,6 +227,8 @@ module.exports = {
 					research : 0
 				}
 
+				this.players[i].explored_tiles = []
+
 				this.players[i].owned_tiles = [];
 				this.claim_area(this.players[i], x, y);
 
@@ -224,6 +246,8 @@ module.exports = {
 				this.explore(this.players[i], x, y);
 			}
 
+			this.started = true;
+
 			this.interval = setInterval(() => {
 				this.update();
 			}, 1000);
@@ -237,8 +261,8 @@ module.exports = {
 			this.meta[y*this.map[0].length+x] = data;
 		};
 
-		this.is_explored = function (x, y) {
-			return this.explored_tiles.indexOf(y*this.map[0].length+x) != -1;
+		this.is_explored = function (player, x, y) {
+			return player.explored_tiles.indexOf(y*this.map[0].length+x) != -1;
 		};
 
 		this.claim_tile = function (player, x, y) {
@@ -277,6 +301,10 @@ module.exports = {
 		};
 
 		this.build = function (player, x, y, tile) {
+			if (!this.started) {
+				return;
+			}
+
 			if(!this.is_on_map(x,y)) {
 				console.log("[error][match] is not on map " + x + ", " + y);
 				return;
@@ -286,7 +314,7 @@ module.exports = {
 				return;
 			}
 
-			if (this.is_explored(x, y)) {
+			if (this.is_explored(player, x, y)) {
 				var cost = this.get_cost(tile);
 
 				if (player.resources.gold >= cost) {
@@ -297,9 +325,16 @@ module.exports = {
 						this.claim_area(player, x, y);
 					}
 
+					this.explore(player, x, y);
+
 					for (var i = 0; i < this.players.length; i++) {
 						var p = this.players[i];
-						this.explore(p, x, y);
+
+						if (p != player) {
+							if(this.is_explored(p, x, y)) {
+								this.send_tile(p, x, y);
+							}
+						}
 					}
 
 					this.send_resources(player);
@@ -312,8 +347,7 @@ module.exports = {
 				for (var k = -1; k <= 1; k++) {
 					if (x+j >= 0 && x+j < this.map[0].length && y+k >= 0 && y+k < this.map[0].length) {
 						this.send_tile(player, x+j, y+k);
-
-						this.explored_tiles.push((y+k)*this.map[0].length+(x+j));
+						player.explored_tiles.push((y+k)*this.map[0].length+(x+j));
 					}
 				}
 			}
@@ -371,5 +405,6 @@ module.exports = {
 		};
 
 		this.owned_tiles = [];
+		this.explored_tiles = [];
 	}
 };

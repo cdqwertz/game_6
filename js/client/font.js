@@ -26,6 +26,7 @@ DEALINGS IN THE SOFTWARE.
 
 var LEFT = 0;
 var RIGHT = 1;
+var CENTER = 3;
 
 function font(src, layout, w, h) {
 	this.img = new Image();
@@ -44,6 +45,8 @@ function font(src, layout, w, h) {
 
 			if(this.text_align == LEFT) {
 				ctx.drawImage(this.img, x, 0, this.w, this.h, pos_x + (i*(this.w + 1)), pos_y, this.w, this.h);
+			} else if (this.text_align == CENTER) {
+				ctx.drawImage(this.img, x, 0, this.w, this.h, pos_x - this.get_text_width(text)/2 + (i*(this.w + 1)), pos_y, this.w, this.h);
 			} else {
 				ctx.drawImage(this.img, x, 0, this.w, this.h, pos_x - this.get_text_width(text) + (i*(this.w + 1)), pos_y, this.w, this.h);
 			}

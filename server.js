@@ -38,7 +38,9 @@ var files = {
 
 	js : {
 		core : fs.readFileSync("./js/client/core.js"),
-		font : fs.readFileSync("./js/client/font.js")
+		font : fs.readFileSync("./js/client/font.js"),
+		match : fs.readFileSync("./js/client/match.js"),
+		socket_events : fs.readFileSync("./js/client/socket_events.js")
 	},
 
 	img : {
@@ -63,6 +65,12 @@ var my_server = http.createServer(function (req, res) {
 	} else if(req.url == "/js/font.js") {
 		res.writeHead(200);
 		res.end(files.js.font);
+	} else if(req.url == "/js/match.js") {
+		res.writeHead(200);
+		res.end(files.js.match);
+	} else if(req.url == "/js/socket_events.js") {
+		res.writeHead(200);
+		res.end(files.js.socket_events);
 	} else if(req.url == "/css/style.css") {
 		res.writeHead(200);
 		res.end(files.css.style);
@@ -96,8 +104,9 @@ var my_server = http.createServer(function (req, res) {
 var io = require("socket.io")(my_server);
 
 io.on("connection", function(socket) {
-	console.log("connect");
-	var my_player = new game.player("", socket, my_game.get_player_id());
+	var my_player_id = my_game.get_player_id();
+	console.log("connect " + my_player_id);
+	var my_player = new game.player("", socket, my_player_id);
 
 	my_game.join(my_player);
 
@@ -117,10 +126,28 @@ io.on("connection", function(socket) {
 			return;
 		}
 
-		if(my_game.is_name_allowed(data.name)) {
-			my_player.name = data.name;
+		if(my_game.is_name_allowed(data.name.toUpperCase())) {
+			my_player.name = data.name.toUpperCase();
 
 			my_player.socket.emit("ok", {
+				id : 1
+			});
+
+			var available_matches = [];
+
+			for (var i = 0; i < my_game.matches.length; i++) {
+				if(!my_game.matches[i].started) {
+					available_matches.push(my_game.matches[i].get_desc());
+				}
+			}
+
+			console.log(JSON.stringify(available_matches));
+
+			my_player.socket.emit("available_matches", {
+				matches : available_matches
+			});
+		} else {
+			my_player.socket.emit("denied", {
 				id : 1
 			});
 		}
@@ -133,9 +160,9 @@ io.on("connection", function(socket) {
 		}
 
 		if (data.action == 2) {
-			if(my_game.matches.length > 0) {
+			if(my_game.matches.length > 0 && my_game.matches[my_game.matches.length - 1].can_join()) {
 				data.action = 1;
-				data.match = 0;
+				data.match = my_game.matches.length - 1;
 			} else {
 				data.action = 0;
 			}
@@ -147,7 +174,10 @@ io.on("connection", function(socket) {
 			var my_match = new game.match(my_game);
 			my_match.join(my_player);
 			my_game.add_match(my_match);
-			my_match.start();
+
+			my_player.socket.emit("ok", {
+				id : 2
+			});
 		} else if (data.action == 1) {
 			if(typeof data.match != "number") {
 				console.log("[error][match] wrong type (1)");
@@ -157,9 +187,14 @@ io.on("connection", function(socket) {
 			// join match
 			console.log("[info] join");
 			var my_match = my_game.matches[data.match];
-			my_match.join(my_player);
 
-			my_player.socket.emit("start_match", {});
+			if (my_match.can_join()) {
+				my_match.join(my_player);
+			} else {
+				my_player.socket.send("denied", {
+					id : 2
+				})
+			}
 		}
 	});
 
